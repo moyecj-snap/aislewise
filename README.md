@@ -17,11 +17,17 @@ Then open `http://127.0.0.1:5173`.
 To point the static frontend at a deployed Render API, copy `config.example.js`
 to `config.js` and update `window.WINE_AISLE_API_URL`.
 
+Current Render API:
+
+```text
+https://aislewise.onrender.com
+```
+
 ## Deploy
 
 1. Deploy this repo to Netlify with publish directory `.`.
 2. Deploy the `api/` folder to Render.
-3. Replace the placeholder Render URL in `netlify.toml`.
+3. Confirm the Render URL in `netlify.toml` is `https://aislewise.onrender.com`.
 4. Run `supabase/schema.sql` in Supabase SQL editor.
 5. Import `supabase/seed_wines.csv` into the `wines` table.
 

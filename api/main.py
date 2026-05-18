@@ -310,6 +310,8 @@ def normalize_wine(row: dict[str, Any]) -> dict[str, Any]:
     display_name = row.get("display_name") or row.get("wine_name") or ""
     producer = row.get("producer") or ""
     varietal = row.get("varietal") or ""
+    pairing_tags = pairing_tags or inferred_pairing_tags(varietal)
+    occasion_tags = occasion_tags or inferred_occasion_tags(row)
 
     search_text = normalize_text(
         " ".join([display_name, producer, varietal, " ".join(aliases), " ".join(label_keywords)])
@@ -386,6 +388,38 @@ def tag_match(value: str, tags: list[str]) -> float:
     if normalized in {"", "none"}:
         return 0.5
     return 1.0 if normalized in normalized_tags else 0.0
+
+
+def inferred_pairing_tags(varietal: str) -> list[str]:
+    key = normalize_text(varietal)
+    defaults = {
+        "cabernet sauvignon": ["steak", "burgers", "pasta", "grilled food"],
+        "tempranillo": ["steak", "burgers", "tapas", "grilled food"],
+        "pinot noir": ["chicken", "salmon", "mushrooms", "cheese"],
+        "zinfandel": ["burgers", "bbq", "pizza", "grilled food"],
+        "malbec": ["steak", "burgers", "bbq", "grilled food"],
+        "red blend": ["burgers", "bbq", "pizza", "pasta"],
+        "sauvignon blanc": ["seafood", "chicken", "cheese"],
+        "chardonnay": ["chicken", "pasta", "seafood", "cheese"],
+        "riesling": ["seafood", "spicy food", "chicken"],
+        "gamay": ["chicken", "cheese", "pasta"],
+    }
+    return defaults.get(key, [])
+
+
+def inferred_occasion_tags(row: dict[str, Any]) -> list[str]:
+    tags = ["weeknight"]
+    price = coerce_float(row.get("avg_price") or row.get("price")) or 0
+    crowd = coerce_float(row.get("crowd_pleaser_score")) or 0
+    value = coerce_float(row.get("value_score")) or 0
+
+    if price <= 15 or value >= 8:
+        tags.append("value")
+    if crowd >= 8:
+        tags.extend(["dinner party", "safe pick"])
+    if price >= 18:
+        tags.extend(["gift", "date night"])
+    return list(dict.fromkeys(tags))
 
 
 def normalized_score(value: Any, max_value: float) -> float:
