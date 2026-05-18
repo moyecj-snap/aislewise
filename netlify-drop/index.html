@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Aislewise MVP</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="phone" aria-label="Aislewise clickable prototype">
+        <header class="app-header">
+          <div>
+            <p class="eyebrow">Aislewise</p>
+            <h1>Wine aisle helper</h1>
+          </div>
+          <div class="brand-mark" aria-hidden="true">AW</div>
+        </header>
+
+        <section id="screen" class="screen" aria-live="polite"></section>
+      </section>
+
+      <aside class="product-notes" aria-label="MVP notes">
+        <p class="eyebrow">MVP prototype</p>
+        <h2>Pick from what is actually in front of you.</h2>
+        <p>
+          The prototype keeps the first version deliberately narrow: budget,
+          food, occasion, a shelf photo, detected bottles, then one top pick
+          and one backup.
+        </p>
+        <div class="note-grid">
+          <div>
+            <strong>Inventory source</strong>
+            <span>User photo</span>
+          </div>
+          <div>
+            <strong>Ranking style</strong>
+            <span>Budget, pairing, occasion, value</span>
+          </div>
+          <div>
+            <strong>Promise</strong>
+            <span>Buy this without overthinking</span>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
