@@ -46,12 +46,28 @@ async def recommend(
     wines = await load_wines()
     extracted: list[dict[str, Any]] = []
     warnings: list[str] = []
+    scan_debug = scan_debug_info(photo)
 
     try:
         extracted = await extract_wines_from_photo(photo)
     except Exception as exc:
         warnings.append("Photo analysis did not finish, so starter recommendations were used.")
         print(f"vision_extraction_failed: {type(exc).__name__}: {exc}")
+
+    if photo and not os.getenv("OPENAI_API_KEY"):
+        warnings.append("Photo was received, but OpenAI vision is not configured on the API.")
+    elif photo and not extracted and not warnings:
+        warnings.append("Photo was received, but no wine label was extracted. Starter recommendations were used.")
+
+    print(
+        "scan_debug: "
+        f"has_photo={scan_debug['has_photo']} "
+        f"filename={scan_debug['filename']} "
+        f"content_type={scan_debug['content_type']} "
+        f"size={scan_debug['size']} "
+        f"vision_configured={scan_debug['vision_configured']} "
+        f"extracted_count={len(extracted)}"
+    )
 
     candidates = match_detected_wines(extracted, wines)
 
@@ -67,6 +83,7 @@ async def recommend(
         "recommendations": recommendations[:2],
         "source": "openai_vision" if extracted else "demo_or_seed",
         "warnings": warnings,
+        "debug": scan_debug,
     }
 
 
@@ -192,6 +209,16 @@ async def extract_wines_from_photo(photo: UploadFile | None) -> list[dict[str, A
 
     parsed = json.loads(text)
     return parsed.get("wines", [])
+
+
+def scan_debug_info(photo: UploadFile | None) -> dict[str, Any]:
+    return {
+        "has_photo": photo is not None,
+        "filename": photo.filename if photo else None,
+        "content_type": photo.content_type if photo else None,
+        "size": photo.size if photo else None,
+        "vision_configured": bool(os.getenv("OPENAI_API_KEY")),
+    }
 
 
 def collect_response_text(body: dict[str, Any]) -> str:
