@@ -68,10 +68,17 @@ async def recommend(
         f"vision_configured={scan_debug['vision_configured']} "
         f"extracted_count={len(extracted)}"
     )
+    if extracted:
+        print(f"vision_extracted: {json.dumps(extracted[:3], ensure_ascii=True)}")
 
     candidates = match_detected_wines(extracted, wines)
 
-    if not candidates:
+    if extracted and not candidates:
+        candidates = unmatched_detected_wines(extracted)
+        warnings.append(
+            "Photo analysis found a wine, but it is not in the starter database yet."
+        )
+    elif not candidates:
         candidates = visible_demo_wines(wines)
 
     recommendations = rank_wines(candidates, budget, food, occasion)
@@ -81,7 +88,7 @@ async def recommend(
         "occasion": occasion,
         "detected_wines": candidates,
         "recommendations": recommendations[:2],
-        "source": "openai_vision" if extracted else "demo_or_seed",
+        "source": response_source(extracted, candidates),
         "warnings": warnings,
         "debug": scan_debug,
     }
@@ -265,6 +272,55 @@ def match_detected_wines(
             seen.add(best["id"])
 
     return matches
+
+
+def unmatched_detected_wines(extracted: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    wines: list[dict[str, Any]] = []
+    for index, item in enumerate(extracted):
+        display_name = (
+            item.get("display_name")
+            or item.get("name")
+            or item.get("producer")
+            or "Detected wine"
+        )
+        varietal = item.get("varietal") or "Wine"
+        price = coerce_float(item.get("price"))
+        confidence = coerce_float(item.get("confidence")) or 0.55
+        wines.append(
+            {
+                "id": f"unmatched-{index + 1}",
+                "display_name": display_name,
+                "producer": item.get("producer"),
+                "normalized_name": normalize_text(display_name),
+                "aliases": [],
+                "varietal": varietal,
+                "region": None,
+                "country": None,
+                "avg_price": price,
+                "price": price,
+                "price_band": None,
+                "rating_estimate": 3.7,
+                "pairing_tags": inferred_pairing_tags(varietal),
+                "occasion_tags": ["weeknight"],
+                "style": "Detected from your photo, but not yet in the starter wine database",
+                "crowd_pleaser_score": 6,
+                "value_score": 5,
+                "known_retailers": [],
+                "label_keywords": [],
+                "recognition_confidence": confidence,
+                "search_text": normalize_text(f"{display_name} {item.get('producer') or ''} {varietal}"),
+                "unmatched": True,
+            }
+        )
+    return wines
+
+
+def response_source(extracted: list[dict[str, Any]], candidates: list[dict[str, Any]]) -> str:
+    if extracted and any(candidate.get("unmatched") for candidate in candidates):
+        return "openai_vision_unmatched"
+    if extracted:
+        return "openai_vision"
+    return "demo_or_seed"
 
 
 def visible_demo_wines(wines: list[dict[str, Any]]) -> list[dict[str, Any]]:
