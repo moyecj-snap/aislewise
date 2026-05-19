@@ -44,7 +44,15 @@ async def recommend(
     photo: UploadFile | None = File(None),
 ) -> dict[str, Any]:
     wines = await load_wines()
-    extracted = await extract_wines_from_photo(photo)
+    extracted: list[dict[str, Any]] = []
+    warnings: list[str] = []
+
+    try:
+        extracted = await extract_wines_from_photo(photo)
+    except Exception as exc:
+        warnings.append("Photo analysis did not finish, so starter recommendations were used.")
+        print(f"vision_extraction_failed: {type(exc).__name__}: {exc}")
+
     candidates = match_detected_wines(extracted, wines)
 
     if not candidates:
@@ -58,11 +66,17 @@ async def recommend(
         "detected_wines": candidates,
         "recommendations": recommendations[:2],
         "source": "openai_vision" if extracted else "demo_or_seed",
+        "warnings": warnings,
     }
 
 
 async def load_wines() -> list[dict[str, Any]]:
-    remote = await load_wines_from_supabase()
+    try:
+        remote = await load_wines_from_supabase()
+    except Exception as exc:
+        print(f"supabase_load_failed: {type(exc).__name__}: {exc}")
+        remote = []
+
     if remote:
         return [normalize_wine(row) for row in remote]
 

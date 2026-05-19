@@ -110,12 +110,13 @@ async function recommend() {
     state.recommendations = response.recommendations?.length
       ? response.recommendations
       : demoBottles.slice(0, 2);
+    state.error = response.warnings?.length ? response.warnings[0] : "";
     state.screen = "results";
   } catch (error) {
     state.detected = demoBottles;
     state.recommendations = demoBottles.slice(0, 2);
     state.screen = "results";
-    state.error = "Using demo recommendations because the API is not connected yet.";
+    state.error = "Showing starter recommendations because the live scan did not finish. Try another photo or scan again.";
   } finally {
     state.loading = false;
     render();
