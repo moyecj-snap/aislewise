@@ -23,6 +23,12 @@ Current Render API:
 https://aislewise.onrender.com
 ```
 
+Google Analytics 4 Measurement ID:
+
+```text
+G-S5DX6462WK
+```
+
 ## Deploy
 
 1. Deploy this repo to Netlify with publish directory `.`.
