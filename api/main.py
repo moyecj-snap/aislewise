@@ -82,6 +82,16 @@ async def recommend(
         candidates = visible_demo_wines(wines)
 
     recommendations = rank_wines(candidates, budget, food, occasion)
+    scan_session_id = await save_scan_results(
+        budget=budget,
+        food=food,
+        occasion=occasion,
+        source=response_source(extracted, candidates),
+        extracted=extracted,
+        candidates=candidates,
+        recommendations=recommendations[:2],
+    )
+
     return {
         "budget": budget,
         "food": food,
@@ -91,6 +101,7 @@ async def recommend(
         "source": response_source(extracted, candidates),
         "warnings": warnings,
         "debug": scan_debug,
+        "scan_session_id": scan_session_id,
     }
 
 
@@ -129,6 +140,157 @@ async def load_wines_from_supabase() -> list[dict[str, Any]]:
         response = await client.get(endpoint, headers=headers, params=params)
         response.raise_for_status()
         return response.json()
+
+
+async def save_scan_results(
+    budget: str,
+    food: str,
+    occasion: str,
+    source: str,
+    extracted: list[dict[str, Any]],
+    candidates: list[dict[str, Any]],
+    recommendations: list[dict[str, Any]],
+) -> str | None:
+    try:
+        session = await supabase_insert(
+            "scan_sessions",
+            {
+                "budget": budget,
+                "food": food,
+                "occasion": occasion,
+                "source": source,
+            },
+            return_representation=True,
+        )
+        if not session:
+            return None
+
+        scan_session_id = session[0]["id"]
+        detected_rows = detected_rows_for_scan(scan_session_id, extracted, candidates)
+        if detected_rows:
+            await supabase_insert("detected_wines", detected_rows)
+
+        recommendation_rows = recommendation_rows_for_scan(scan_session_id, recommendations)
+        if recommendation_rows:
+            await supabase_insert("recommendations", recommendation_rows)
+
+        return scan_session_id
+    except Exception as exc:
+        print(f"scan_persist_failed: {type(exc).__name__}: {exc}")
+        return None
+
+
+async def supabase_insert(
+    table: str, payload: dict[str, Any] | list[dict[str, Any]], return_representation: bool = False
+) -> list[dict[str, Any]]:
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    if not url or not key:
+        return []
+
+    headers = {
+        "apikey": key,
+        "authorization": f"Bearer {key}",
+        "content-type": "application/json",
+    }
+    if return_representation:
+        headers["prefer"] = "return=representation"
+
+    endpoint = f"{supabase_rest_base(url)}/{table}"
+    async with httpx.AsyncClient(timeout=12) as client:
+        response = await client.post(endpoint, headers=headers, json=payload)
+        response.raise_for_status()
+        if response.content:
+            return response.json()
+    return []
+
+
+def detected_rows_for_scan(
+    scan_session_id: str,
+    extracted: list[dict[str, Any]],
+    candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if extracted:
+        return [
+            {
+                "scan_session_id": scan_session_id,
+                "wine_id": matched_wine_id_for_extraction(item, candidates),
+                "raw_name": raw_detected_name(item),
+                "detected_price": coerce_float(item.get("price")),
+                "confidence": coerce_float(item.get("confidence")),
+            }
+            for item in extracted
+            if raw_detected_name(item)
+        ]
+
+    return [
+        {
+            "scan_session_id": scan_session_id,
+            "wine_id": item.get("id") if is_uuid(item.get("id")) else None,
+            "raw_name": item.get("display_name") or item.get("name"),
+            "detected_price": coerce_float(item.get("price") or item.get("avg_price")),
+            "confidence": coerce_float(item.get("recognition_confidence")),
+        }
+        for item in candidates
+        if item.get("display_name") or item.get("name")
+    ]
+
+
+def recommendation_rows_for_scan(
+    scan_session_id: str, recommendations: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    rows = []
+    for index, item in enumerate(recommendations, start=1):
+        rows.append(
+            {
+                "scan_session_id": scan_session_id,
+                "wine_id": item.get("id") if is_uuid(item.get("id")) else None,
+                "rank": index,
+                "score": coerce_float(item.get("score")) or 0,
+                "reasons": item.get("reasons") or [],
+            }
+        )
+    return rows
+
+
+def matched_wine_id_for_extraction(
+    extracted_item: dict[str, Any], candidates: list[dict[str, Any]]
+) -> str | None:
+    raw_name = normalize_text(raw_detected_name(extracted_item))
+    if not raw_name:
+        return None
+
+    best_id = None
+    best_score = 0
+    for candidate in candidates:
+        if not is_uuid(candidate.get("id")):
+            continue
+        score = token_overlap(raw_name, candidate.get("search_text", ""))
+        if score > best_score:
+            best_score = score
+            best_id = candidate["id"]
+
+    return best_id if best_score >= 0.25 else None
+
+
+def raw_detected_name(item: dict[str, Any]) -> str:
+    return str(
+        item.get("display_name")
+        or item.get("name")
+        or item.get("producer")
+        or item.get("varietal")
+        or ""
+    ).strip()
+
+
+def is_uuid(value: Any) -> bool:
+    return bool(
+        isinstance(value, str)
+        and re.fullmatch(
+            r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+            value,
+        )
+    )
 
 
 async def extract_wines_from_photo(photo: UploadFile | None) -> list[dict[str, Any]]:

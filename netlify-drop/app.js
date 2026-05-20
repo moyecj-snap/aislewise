@@ -73,8 +73,11 @@ const options = {
 
 const screen = document.querySelector("#screen");
 
+initAnalytics();
+
 function setChoice(key, value) {
   state[key] = value;
+  track("filter_changed", { filter_name: key, filter_value: value });
   render();
 }
 
@@ -82,10 +85,11 @@ function goTo(screenName) {
   state.screen = screenName;
   state.error = "";
   state.selected = null;
+  track("screen_view", { screen_name: screenName });
   render();
 }
 
-function choosePhoto(input) {
+function choosePhoto(input, method = "upload") {
   const file = input.files?.[0];
   if (!file) return;
 
@@ -94,6 +98,11 @@ function choosePhoto(input) {
   reader.onload = () => {
     state.photoPreview = reader.result;
     state.error = "";
+    track("photo_selected", {
+      method,
+      file_type: file.type || "unknown",
+      file_size: file.size || 0
+    });
     render();
   };
   reader.readAsDataURL(file);
@@ -102,6 +111,12 @@ function choosePhoto(input) {
 async function recommend() {
   state.loading = true;
   state.error = "";
+  track("recommendation_requested", {
+    has_photo: Boolean(state.photo),
+    budget: state.budget,
+    food: state.food,
+    occasion: state.occasion
+  });
   render();
 
   try {
@@ -112,11 +127,17 @@ async function recommend() {
       : demoBottles.slice(0, 2);
     state.error = response.warnings?.length ? response.warnings[0] : "";
     state.screen = "results";
+    track("recommendation_received", {
+      source: response.source || "unknown",
+      recommendation_count: state.recommendations.length,
+      warning_count: response.warnings?.length || 0
+    });
   } catch (error) {
     state.detected = demoBottles;
     state.recommendations = demoBottles.slice(0, 2);
     state.screen = "results";
     state.error = "Showing starter recommendations because the live scan did not finish. Try another photo or scan again.";
+    track("recommendation_failed", { message: error.message || "unknown" });
   } finally {
     state.loading = false;
     render();
@@ -145,6 +166,10 @@ async function callRecommendationApi() {
 
 function openDetail(index) {
   state.selected = state.recommendations[index];
+  track("recommendation_opened", {
+    rank: index + 1,
+    wine_name: state.selected?.display_name || state.selected?.name || "unknown"
+  });
   render();
 }
 
@@ -166,10 +191,9 @@ function priceText(item) {
 
 function renderStart() {
   return `
-    <div class="hero-panel">
-      <p>In Costco, grocery, or wine store?</p>
-      <h2>Scan the shelf. Get the best bottle.</h2>
-      <p>Answer three quick questions, then snap a photo of the wines in front of you.</p>
+    <div class="intro-panel">
+      <h2>Find a bottle that fits tonight.</h2>
+      <p>Pick your budget, meal, and occasion. Then scan the shelf or upload a bottle photo.</p>
     </div>
 
     <div class="field-group">
@@ -194,7 +218,7 @@ function renderStart() {
     </div>
 
     <button class="primary-action" type="button" onclick="goTo('scan')">
-      Scan wines <span aria-hidden="true">CAM</span>
+      Scan shelf or bottle <span aria-hidden="true">CAM</span>
     </button>
   `;
 }
@@ -213,11 +237,18 @@ function renderScan() {
       </p>
     </div>
 
-    <label class="upload-target">
-      <input type="file" accept="image/*" capture="environment" onchange="choosePhoto(this)" />
-      <span>Choose or take shelf photo</span>
-      <small>On mobile this opens the camera.</small>
-    </label>
+    <div class="photo-actions">
+      <label class="upload-target">
+        <input type="file" accept="image/*" capture="environment" onchange="choosePhoto(this, 'camera')" />
+        <span>Take a photo</span>
+        <small>Open camera</small>
+      </label>
+      <label class="upload-target">
+        <input type="file" accept="image/*" onchange="choosePhoto(this, 'library')" />
+        <span>Upload from phone</span>
+        <small>Use library</small>
+      </label>
+    </div>
 
     <div class="detected-list">
       ${demoBottles
@@ -238,7 +269,7 @@ function renderScan() {
     ${state.error ? `<p class="inline-error">${state.error}</p>` : ""}
 
     <button class="primary-action" type="button" onclick="recommend()" ${state.loading ? "disabled" : ""}>
-      ${state.loading ? "Finding your bottle..." : "Recommend my bottle"} <span aria-hidden="true">*</span>
+      ${state.loading ? "Checking the photo..." : "Find the best pick"} <span aria-hidden="true">*</span>
     </button>
   `;
 }
@@ -354,3 +385,26 @@ function render() {
 }
 
 render();
+
+function initAnalytics() {
+  const measurementId = window.GA_MEASUREMENT_ID;
+  if (!measurementId) return;
+
+  const script = document.createElement("script");
+  script.async = true;
+  script.src = `https://www.googletagmanager.com/gtag/js?id=${measurementId}`;
+  document.head.appendChild(script);
+
+  window.dataLayer = window.dataLayer || [];
+  window.gtag = function gtag() {
+    window.dataLayer.push(arguments);
+  };
+  window.gtag("js", new Date());
+  window.gtag("config", measurementId);
+}
+
+function track(eventName, params = {}) {
+  if (typeof window.gtag === "function") {
+    window.gtag("event", eventName, params);
+  }
+}
